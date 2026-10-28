@@ -17,14 +17,14 @@
 
 <section class="card" aria-labelledby="customers-title">
     <div class="card-header">
-        <div><h2 id="customers-title">Danh sách khách hàng</h2><p class="card-subtitle">Tìm theo tên hoặc email, lọc theo trạng thái tài khoản.</p></div>
+        <div><h2 id="customers-title">Danh sách khách hàng</h2><p class="card-subtitle">Tìm theo tên, email hoặc số điện thoại; lọc theo trạng thái tài khoản.</p></div>
     </div>
     <form class="table-toolbar" method="get" asp-action="Index" role="search">
         <input type="hidden" name="sort" value="@(Model.Sort == "id_desc" ? null : Model.Sort)" />
         <label class="input-group">
             <icon name="search" />
             <span class="visually-hidden">Tìm khách hàng</span>
-            <input name="search" type="search" value="@Model.Search" placeholder="Tìm tên hoặc email" />
+            <input name="search" type="search" value="@Model.Search" placeholder="Tìm tên, email hoặc số điện thoại" />
         </label>
         <select name="status" aria-label="Lọc theo trạng thái">
             <option value="">Tất cả trạng thái</option>

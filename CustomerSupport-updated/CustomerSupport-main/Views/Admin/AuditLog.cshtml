@@ -8,6 +8,10 @@
         ("user.lock", "Khóa tài khoản", "badge badge-warning"),
         ("user.unlock", "Mở khóa tài khoản", "badge badge-neutral"),
         ("user.delete", "Xóa tài khoản", "badge badge-danger"),
+        ("user.password-reset-request", "Yêu cầu đặt lại mật khẩu", "badge badge-neutral"),
+        ("user.password-reset", "Đặt lại mật khẩu", "badge badge-warning"),
+        ("ticket.category", "Đổi danh mục yêu cầu", "badge badge-info"),
+        ("ai.ticket", "Dùng công cụ AI", "badge badge-sky"),
     };
     (string Text, string Badge) Describe(string action) =>
         actions.Where(a => a.Key == action).Select(a => (a.Text, a.Badge)).FirstOrDefault() is { Text: not null } found

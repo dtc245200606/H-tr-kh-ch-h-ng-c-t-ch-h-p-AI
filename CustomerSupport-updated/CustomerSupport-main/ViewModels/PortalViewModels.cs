@@ -6,6 +6,12 @@ public sealed class DashboardViewModel
     public int Open { get; set; }
     public int Resolved { get; set; }
     public int Conversations { get; set; }
+    /// <summary>Open or in-progress tickets whose newest message is the customer's (staff only).</summary>
+    public int AwaitingTeam { get; set; }
+    /// <summary>Open or in-progress tickets with no team message yet (staff only).</summary>
+    public int Unanswered { get; set; }
+    /// <summary>Mean time to first team reply for tickets created in the selected period; null when none.</summary>
+    public TimeSpan? AvgFirstResponse { get; set; }
     public bool IsStaff { get; set; }
     public List<SupportTicket> Recent { get; set; } = [];
     public Dictionary<string, int> Categories { get; set; } = [];

@@ -30,7 +30,10 @@ public sealed class CustomersController(AppDbContext db, UserAdministrationServi
         if (!string.IsNullOrWhiteSpace(search))
         {
             var term = search.Trim();
-            query = query.Where(user => user.DisplayName.Contains(term) || user.Email.Contains(term));
+            // Phone numbers are stored canonically ("0912345678"); normalise "+84 912 345 678" style input to match.
+            var phone = PhoneNumber.Normalize(term) ?? term;
+            query = query.Where(user => user.DisplayName.Contains(term) || user.Email.Contains(term)
+                || (user.PhoneNumber != null && user.PhoneNumber.Contains(phone)));
         }
 
         sort = sort is "id" or "name" or "name_desc" or "email" or "email_desc" ? sort : "id_desc";

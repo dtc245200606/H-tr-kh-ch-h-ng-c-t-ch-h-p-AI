@@ -26,9 +26,67 @@ try{
    Console.WriteLine("PASS: "+page.Item1+" "+mode.Item1+" renders without overflow");
   }
  }
+ // Optional staff pass: args[3] = staff cookie file, args[4] = path of an open ticket.
+ if(args.Length>=5&&args[4].Length>0){
+  await cdp.Call("Network.clearBrowserCookies",new{});
+  foreach(var cookie in JsonNode.Parse(File.ReadAllText(args[3]))!.AsArray())await cdp.Call("Network.setCookie",new{name=cookie!["Name"]!.GetValue<string>(),value=cookie["Value"]!.GetValue<string>(),url=baseUrl,path="/",httpOnly=true});
+  foreach(var mode in new[]{("desktop",1440,1050,false),("mobile",390,1000,true)}){
+   await cdp.Call("Emulation.setDeviceMetricsOverride",new{width=mode.Item2,height=mode.Item3,deviceScaleFactor=1,mobile=mode.Item4});
+   foreach(var page in new[]{("staff-dashboard","/Dashboard"),("staff-tickets","/Tickets"),("staff-ticket","/"+args[4].TrimStart('/')),("staff-customers","/Customers")}){
+    await cdp.Call("Page.navigate",new{url=baseUrl+page.Item2});await Task.Delay(700);
+    var check=await cdp.Call("Runtime.evaluate",new{expression="({scroll:document.documentElement.scrollWidth,error:document.body.innerText.includes('An unhandled exception'),signedOut:location.pathname.startsWith('/Account/Login'),ai:!!document.querySelector('[data-ai-endpoint]')})",returnByValue=true});var v=check.GetProperty("result").GetProperty("value");
+    if(v.GetProperty("error").GetBoolean()||v.GetProperty("signedOut").GetBoolean())throw new Exception("Staff page failed: "+page.Item1+" "+v);
+    if(page.Item1=="staff-ticket"&&!v.GetProperty("ai").GetBoolean())throw new Exception("AI panel missing on staff ticket page");
+    if(page.Item1=="staff-ticket"&&!mode.Item4){
+     // Client rendering of AI results with a stubbed provider response (the server side is covered by HttpChecks/ServiceChecks).
+     const string script="""
+      (async () => {
+        const canned = { classify: { category: 'Billing', categoryText: 'Hóa đơn và thanh toán', priority: 'Cao', reason: 'Khách bị trừ tiền.', same: false },
+          summary: { issue: 'Bị trừ tiền', tried: [], keyPoints: ['Đã hỏi mã giao dịch'], current: 'Chờ khách', nextSteps: ['Đối soát'], missing: ['Mã giao dịch'] },
+          draft: { text: 'Chào anh/chị, <b>không phải HTML</b>', sources: [] } };
+        window.fetch = async (url, init) => new Response(JSON.stringify({ result: canned[init.body.get('task')], truncated: false, generatedAt: '10:00 29/10/2026' }), { status: 200 });
+        document.querySelectorAll('[data-ai-run]').forEach(b => b.disabled = false);
+        const wait = () => new Promise(r => setTimeout(r, 150));
+        document.querySelector('[data-ai-run="classify"]').click(); await wait();
+        const cls = document.querySelector('[data-ai-panel="classify"] [data-ai-result]');
+        const okClassify = !cls.hidden && cls.textContent.includes('Hóa đơn và thanh toán') && !cls.querySelector('[data-ai-apply]').hidden
+          && cls.querySelector('[data-field-value="category"]').value === 'Billing';
+        document.querySelector('[data-ai-run="summary"]').click(); await wait();
+        const sum = document.querySelector('[data-ai-panel="summary"] [data-ai-result]');
+        const okSummary = !sum.hidden && sum.textContent.includes('Mã giao dịch') && !sum.textContent.includes('Đã thử');
+        document.querySelector('.reply-form-head [data-ai-run="draft"]').click(); await wait();
+        document.querySelector('[data-ai-insert]').click();
+        const reply = document.getElementById('reply-body');
+        const okDraft = reply.value.startsWith('Chào anh/chị, <b>') && !document.querySelector('[data-ai-review]').hidden;
+        const okReview = !document.getElementById('reply-form').checkValidity();
+        document.querySelector('[data-ai-review-box]').click();
+        const okConfirmed = document.getElementById('reply-form').checkValidity();
+        return JSON.stringify({ okClassify, okSummary, okDraft, okReview, okConfirmed });
+      })()
+      """;
+     var aiRun=await cdp.Call("Runtime.evaluate",new{expression=script,awaitPromise=true,returnByValue=true});
+     var aiResult=JsonNode.Parse(aiRun.GetProperty("result").GetProperty("value").GetString()!)!.AsObject();
+     foreach(var (key,label) in new[]{("okClassify","AI classification renders with apply form"),("okSummary","AI summary renders, empty sections hidden"),("okDraft","AI draft inserts as plain text and asks for review"),("okReview","reply with AI text blocked until reviewed"),("okConfirmed","reply allowed after review confirmation")}){
+      if(aiResult[key]?.GetValue<bool>()!=true)throw new Exception("FAILED: "+label+" "+aiResult.ToJsonString());
+      Console.WriteLine("PASS: "+label);
+     }
+     var shotAi=await cdp.Call("Page.captureScreenshot",new{format="png",captureBeyondViewport=false});await File.WriteAllBytesAsync(Path.Combine(output,"staff-ticket-ai-desktop.png"),Convert.FromBase64String(shotAi.GetProperty("data").GetString()!));
+    }
+    var shotStaff=await cdp.Call("Page.captureScreenshot",new{format="png",captureBeyondViewport=false});await File.WriteAllBytesAsync(Path.Combine(output,page.Item1+"-"+mode.Item1+".png"),Convert.FromBase64String(shotStaff.GetProperty("data").GetString()!));
+    if(v.GetProperty("scroll").GetInt32()>mode.Item2+1)throw new Exception("Horizontal overflow on "+mode.Item1+" "+page.Item1+": "+v);
+    Console.WriteLine("PASS: "+page.Item1+" "+mode.Item1+" renders without overflow");
+   }
+  }
+  File.Delete(args[3]);
+ }
  await cdp.Call("Network.clearBrowserCookies",new{});await cdp.Call("Emulation.setDeviceMetricsOverride",new{width=390,height=1000,deviceScaleFactor=1,mobile=true});await cdp.Call("Page.navigate",new{url=baseUrl});await Task.Delay(700);
  var landing=await cdp.Call("Runtime.evaluate",new{expression="document.documentElement.scrollWidth <= innerWidth",returnByValue=true});var shot=await cdp.Call("Page.captureScreenshot",new{format="png"});await File.WriteAllBytesAsync(Path.Combine(output,"landing-mobile.png"),Convert.FromBase64String(shot.GetProperty("data").GetString()!));
- if(!landing.GetProperty("result").GetProperty("value").GetBoolean())throw new Exception("Mobile landing overflows");Console.WriteLine("PASS: public mobile landing without overflow");Console.WriteLine("All browser checks passed.");
+ if(!landing.GetProperty("result").GetProperty("value").GetBoolean())throw new Exception("Mobile landing overflows");Console.WriteLine("PASS: public mobile landing without overflow");
+ foreach(var page in new[]{("login","/Account/Login"),("forgot-password","/Account/ForgotPassword"),("reset-invalid","/Account/ResetPassword?token=invalid")}){
+  await cdp.Call("Page.navigate",new{url=baseUrl+page.Item2});await Task.Delay(500);
+  var fits=await cdp.Call("Runtime.evaluate",new{expression="document.documentElement.scrollWidth <= innerWidth && !document.body.innerText.includes('An unhandled exception')",returnByValue=true});var pageShot=await cdp.Call("Page.captureScreenshot",new{format="png"});await File.WriteAllBytesAsync(Path.Combine(output,page.Item1+"-mobile.png"),Convert.FromBase64String(pageShot.GetProperty("data").GetString()!));
+  if(!fits.GetProperty("result").GetProperty("value").GetBoolean())throw new Exception("Mobile "+page.Item1+" overflows or fails");Console.WriteLine("PASS: "+page.Item1+" mobile without overflow");
+ }Console.WriteLine("All browser checks passed.");
 }finally{if(!browser.HasExited)browser.Kill(true);File.Delete(cookiePath);}
 sealed class Cdp(ClientWebSocket socket){
  private int id;

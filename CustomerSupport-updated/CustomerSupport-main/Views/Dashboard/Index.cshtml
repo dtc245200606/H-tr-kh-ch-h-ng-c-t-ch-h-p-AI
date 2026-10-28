@@ -63,18 +63,43 @@
     <article class="kpi">
         <div class="kpi-top"><span class="kpi-label">Cần xử lý</span><span class="kpi-icon tone-warning"><icon name="clock" /></span></div>
         <div class="kpi-value">@Model.Open<span class="kpi-unit">yêu cầu</span></div>
-        <div class="kpi-meta">Mới tiếp nhận và đang xử lý</div>
+        <div class="kpi-meta">
+            @if (Model.IsStaff)
+            {
+                <a asp-controller="Tickets" asp-action="Index" asp-route-status="@CustomerSupportAI.Controllers.TicketsController.AwaitingFilter">@Model.AwaitingTeam chờ nhân viên phản hồi</a><span>· @Model.Unanswered chưa có phản hồi nào</span>
+            }
+            else
+            {
+                <span>Mới tiếp nhận và đang xử lý</span>
+            }
+        </div>
     </article>
     <article class="kpi">
         <div class="kpi-top"><span class="kpi-label">Đã hoàn tất</span><span class="kpi-icon tone-success"><icon name="circle-check" /></span></div>
         <div class="kpi-value">@Model.Resolved<span class="kpi-unit">/ @Model.Total</span></div>
         <div class="kpi-meta">@resolvedPercent% tổng số yêu cầu đã giải quyết hoặc đóng</div>
     </article>
-    <article class="kpi">
-        <div class="kpi-top"><span class="kpi-label">Lượt hỏi trợ lý</span><span class="kpi-icon tone-sky"><icon name="bot" /></span></div>
-        <div class="kpi-value">@Model.Conversations<span class="kpi-unit">lượt</span></div>
-        <div class="kpi-meta">Trong lịch sử trò chuyện của bạn</div>
-    </article>
+    @if (Model.IsStaff)
+    {
+        var fr = Model.AvgFirstResponse;
+        var (frValue, frUnit) = fr is null ? ("—", "")
+            : fr.Value.TotalMinutes < 60 ? (Math.Max(1, Math.Round(fr.Value.TotalMinutes)).ToString("0"), "phút")
+            : fr.Value.TotalHours < 48 ? (fr.Value.TotalHours.ToString("0.#"), "giờ")
+            : (fr.Value.TotalDays.ToString("0.#"), "ngày");
+        <article class="kpi">
+            <div class="kpi-top"><span class="kpi-label">Phản hồi đầu tiên TB · @periodText</span><span class="kpi-icon tone-sky"><icon name="clock" /></span></div>
+            <div class="kpi-value">@frValue<span class="kpi-unit">@frUnit</span></div>
+            <div class="kpi-meta">@(fr is null ? "Chưa có yêu cầu nào trong kỳ được phản hồi" : "Từ lúc tạo đến tin nhắn đầu tiên của nhân viên")</div>
+        </article>
+    }
+    else
+    {
+        <article class="kpi">
+            <div class="kpi-top"><span class="kpi-label">Lượt hỏi trợ lý</span><span class="kpi-icon tone-sky"><icon name="bot" /></span></div>
+            <div class="kpi-value">@Model.Conversations<span class="kpi-unit">lượt</span></div>
+            <div class="kpi-meta">Trong lịch sử trò chuyện của bạn</div>
+        </article>
+    }
 </section>
 
 <div class="grid-main-aside">

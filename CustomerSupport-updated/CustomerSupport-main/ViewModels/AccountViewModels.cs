@@ -45,6 +45,24 @@ public sealed class CreateStaffViewModel
     public string TemporaryPassword { get; set; } = string.Empty;
 }
 
+public sealed class ForgotPasswordViewModel
+{
+    [Required(ErrorMessage = "Vui lòng nhập email hoặc số điện thoại."), MaxLength(320, ErrorMessage = "Thông tin không được vượt quá 320 ký tự.")]
+    public string Email { get; set; } = string.Empty;
+}
+
+public sealed class ResetPasswordViewModel
+{
+    [Required]
+    public string Token { get; set; } = string.Empty;
+
+    [Required(ErrorMessage = "Vui lòng nhập mật khẩu mới."), MinLength(10, ErrorMessage = "Mật khẩu cần có ít nhất {1} ký tự."), DataType(DataType.Password)]
+    public string NewPassword { get; set; } = string.Empty;
+
+    [Required(ErrorMessage = "Vui lòng xác nhận mật khẩu mới."), Compare(nameof(NewPassword), ErrorMessage = "Mật khẩu xác nhận không khớp."), DataType(DataType.Password)]
+    public string ConfirmPassword { get; set; } = string.Empty;
+}
+
 public sealed class ChangePasswordViewModel
 {
     [Required(ErrorMessage = "Vui lòng nhập mật khẩu hiện tại."), DataType(DataType.Password)]

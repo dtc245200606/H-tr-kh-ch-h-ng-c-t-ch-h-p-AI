@@ -11,7 +11,7 @@ $random = [Security.Cryptography.RandomNumberGenerator]::Create()
 $random.GetBytes($randomBytes)
 $random.Dispose()
 $password = [Convert]::ToBase64String($randomBytes) + 'aA1!'
-$environmentNames = @('ConnectionStrings__DefaultConnection','ASPNETCORE_ENVIRONMENT','BootstrapAdmin__Email','BootstrapAdmin__Password','Gemini__ApiKey','AiSettings__StorageDirectory','Logging__LogLevel__Default')
+$environmentNames = @('ConnectionStrings__DefaultConnection','ASPNETCORE_ENVIRONMENT','BootstrapAdmin__Email','BootstrapAdmin__Password','Gemini__ApiKey','AiSettings__StorageDirectory','Logging__LogLevel__Default','Mail__OutboxDirectory','Smtp__Host')
 $savedEnvironment = @{}
 foreach ($name in $environmentNames) { $savedEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, 'Process') }
 function Check($condition, $name) { if (!$condition) { throw "FAILED: $name" }; Write-Output "PASS: $name" }
@@ -28,6 +28,9 @@ try {
     $env:BootstrapAdmin__Password = $password
     $env:Gemini__ApiKey = ''
     $env:AiSettings__StorageDirectory = Join-Path $run 'settings'
+    $outbox = Join-Path $run 'mail-outbox'
+    $env:Mail__OutboxDirectory = $outbox
+    $env:Smtp__Host = ''
     $env:Logging__LogLevel__Default = 'Warning'
     $dll = Join-Path $projectRoot 'bin\Debug\net10.0\CustomerSupportAI.dll'
     $server = Start-Process -FilePath 'dotnet' -ArgumentList @('"' + $dll + '"', '--urls', $base) -WorkingDirectory $projectRoot -WindowStyle Hidden -RedirectStandardOutput (Join-Path $run 'server.log') -RedirectStandardError (Join-Path $run 'server-error.log') -PassThru
@@ -114,12 +117,58 @@ try {
     Check (([Net.WebUtility]::HtmlDecode($lockedLogin.Content)) -match 'đã bị khóa') 'locked customer cannot sign in'
     $null = PostForm "/Customers/Delete/$threeId" $staffSession @{} (Page "/Customers/Details/$threeId" $staffSession)
     Check ((StatusOf { Page "/Customers/Details/$threeId" $staffSession }) -eq 404) 'staff deletes a customer account'
+    Check ((Page '/Tickets?status=Awaiting' $staffSession).Content -match 'HTTP test ticket') 'staff filters tickets awaiting a team reply'
+    $byCustomer = [Net.WebUtility]::HtmlDecode((Page "/Tickets?customerId=$customerId" $staffSession).Content)
+    Check ($byCustomer -match 'HTTP test ticket' -and $byCustomer -match 'Khách hàng: Renamed Customer') 'staff filters tickets by customer'
+    # The header notification menu can quote ticket subjects, so assert on the list's empty state instead.
+    Check (([Net.WebUtility]::HtmlDecode((Page '/Tickets?from=2000-01-01&to=2000-01-02' $staffSession).Content)) -match 'Không tìm thấy yêu cầu phù hợp') 'ticket date range filter excludes other dates'
+    Check (([Net.WebUtility]::HtmlDecode((Page '/Tickets?category=Billing' $one).Content)) -match 'Không tìm thấy yêu cầu phù hợp') 'ticket category filter applies for customers'
+    $staffTicket = Page "/Tickets/Details/$ticketId" $staffSession
+    Check ($staffTicket.Content -match 'data-ai-endpoint' -and (Page "/Tickets/Details/$ticketId" $one).Content -notmatch 'data-ai-endpoint') 'AI tools shown to staff only'
+    Check ((PostForm "/Tickets/Ai/$ticketId" $one @{task='summary'} (Page "/Tickets/Details/$ticketId" $one)).BaseResponse.ResponseUri.AbsolutePath -eq '/Account/AccessDenied') 'customer cannot call ticket AI tools'
+    Check ((StatusOf { PostForm "/Tickets/Ai/$ticketId" $staffSession @{task='summary'} $staffTicket }) -eq 502) 'ticket AI without provider key returns an error, not a fabricated result'
+    Check ((StatusOf { PostForm "/Tickets/Ai/$ticketId" $staffSession @{task='bogus'} $staffTicket }) -eq 400) 'ticket AI rejects unknown task'
+    Check ((PostForm '/Tickets/UpdateCategory' $one @{id=$ticketId;category='Billing'} (Page "/Tickets/Details/$ticketId" $one)).BaseResponse.ResponseUri.AbsolutePath -eq '/Account/AccessDenied') 'customer cannot change ticket category'
+    $recategorised = PostForm '/Tickets/UpdateCategory' $staffSession @{id=$ticketId;category='Billing'} $staffTicket
+    Check (([Net.WebUtility]::HtmlDecode($recategorised.Content)) -match 'Đã cập nhật danh mục') 'staff changes ticket category'
+    Check (([Net.WebUtility]::HtmlDecode((Page '/Admin/AuditLog?kind=ticket.category' $admin).Content)) -match 'Truy cập tài khoản → Hóa đơn và thanh toán') 'category change recorded in audit log'
     $adminCreate = PostForm '/Admin/Create' $admin @{DisplayName='Second Admin';Email='admin2@test.local';Role='Admin';Password=$password} (Page '/Admin/Create' $admin)
     Check ($adminCreate.Content -match 'admin2@test.local') 'administrator creates another administrator'
     Check ((Page '/Admin/AuditLog' $admin).Content -match 'admin2@test.local') 'administrative actions appear in the audit log'
     $brute = & $newSession
     for ($i=0; $i -lt 6; $i++) { $attempt = PostForm '/Account/Login' $brute @{Email='nobody@test.local';Password='wrong-password-1'} (Page '/Account/Login' $brute) }
     Check (([Net.WebUtility]::HtmlDecode($attempt.Content)) -match 'quá nhiều lần') 'repeated failed sign-ins are throttled'
+    # Forgot password: link delivered to the development outbox, single use, ends other sessions.
+    $resetUser = & $newSession
+    $null = PostForm '/Account/Register' $resetUser @{DisplayName='Reset Customer';Email='reset@test.local';Password=$password;ConfirmPassword=$password} (Page '/Account/Register' $resetUser)
+    Check ((Page '/Account/Login' (& $newSession)).Content -match '/Account/ForgotPassword') 'login page links to forgot password'
+    $anon = & $newSession
+    $unknown = PostForm '/Account/ForgotPassword' $anon @{Email='nobody-here@test.local'} (Page '/Account/ForgotPassword' $anon)
+    Check ($unknown.BaseResponse.ResponseUri.AbsolutePath -eq '/Account/ForgotPasswordSent') 'unknown account gets the same neutral confirmation'
+    $sent = PostForm '/Account/ForgotPassword' $anon @{Email='RESET@test.local'} (Page '/Account/ForgotPassword' $anon)
+    Check ($sent.BaseResponse.ResponseUri.AbsolutePath -eq '/Account/ForgotPasswordSent') 'known account gets the same neutral confirmation'
+    $mail = $null
+    for ($i=0; $i -lt 20 -and !$mail; $i++) { Start-Sleep -Milliseconds 250; $mail = Get-ChildItem $outbox -Filter '*reset_test_local*' -ErrorAction SilentlyContinue | Select-Object -First 1 }
+    Check ($mail -and @(Get-ChildItem $outbox).Count -eq 1) 'reset email written only for the existing account'
+    $mailText = [IO.File]::ReadAllText($mail.FullName)
+    $resetPath = [regex]::Match($mailText, '/Account/ResetPassword\?token=[^\s]+').Value
+    Check ($resetPath.Length -gt 0 -and $mailText -notmatch [regex]::Escape($password)) 'reset email contains a tokenised link and no password'
+    Check (([Net.WebUtility]::HtmlDecode((Page ($resetPath + 'x') $anon).Content)) -match 'không còn hiệu lực') 'tampered reset token rejected'
+    $resetForm = Page $resetPath $anon
+    $mismatch = PostForm '/Account/ResetPassword' $anon @{Token=[uri]::UnescapeDataString($resetPath.Split('=',2)[1]);NewPassword='new-reset-pass-1';ConfirmPassword='other-pass-123'} $resetForm
+    Check (([Net.WebUtility]::HtmlDecode($mismatch.Content)) -match 'không khớp') 'reset rejects mismatched confirmation'
+    $resetPassword = $password + 'reset'
+    $done = PostForm '/Account/ResetPassword' $anon @{Token=[uri]::UnescapeDataString($resetPath.Split('=',2)[1]);NewPassword=$resetPassword;ConfirmPassword=$resetPassword} $resetForm
+    Check ($done.BaseResponse.ResponseUri.AbsolutePath -eq '/Account/Login' -and ([Net.WebUtility]::HtmlDecode($done.Content)) -match 'Đã đặt lại mật khẩu') 'password reset succeeds'
+    Check (([Net.WebUtility]::HtmlDecode((Page $resetPath $anon).Content)) -match 'không còn hiệu lực') 'reset link cannot be reused'
+    Check ((Page '/Tickets' $resetUser).BaseResponse.ResponseUri.AbsolutePath -eq '/Account/Login') 'existing sessions signed out after reset'
+    $stale = & $newSession
+    $oldLogin = PostForm '/Account/Login' $stale @{Email='reset@test.local';Password=$password} (Page '/Account/Login' $stale)
+    Check ($oldLogin.BaseResponse.ResponseUri.AbsolutePath -eq '/Account/Login') 'old password no longer works'
+    $fresh = & $newSession
+    $newLogin = PostForm '/Account/Login' $fresh @{Email='reset@test.local';Password=$resetPassword} (Page '/Account/Login' $fresh)
+    Check ($newLogin.BaseResponse.ResponseUri.AbsolutePath -eq '/Dashboard') 'new password signs in'
+    Check ((Page '/Admin/AuditLog?kind=user.password-reset' $admin).Content -match 'reset@test.local') 'password reset recorded in audit log'
     $updated = PostForm '/Tickets/UpdateStatus' $admin @{id=$ticketId;status='Resolved'} (Page "/Tickets/Details/$ticketId" $admin)
     Check (([Net.WebUtility]::HtmlDecode($updated.Content)) -match 'Đã giải quyết') 'staff role can update ticket status'
     $closed = PostForm '/Tickets/UpdateStatus' $admin @{id=$ticketId;status='Closed'} $updated
@@ -141,7 +190,11 @@ try {
         $cookieFile = Join-Path $run 'browser-cookies.json'
         $cookieData = @($one.Cookies.GetCookies([Uri]$base) | ForEach-Object { @{Name=$_.Name;Value=$_.Value} })
         [IO.File]::WriteAllText($cookieFile, (ConvertTo-Json -InputObject $cookieData))
-        & dotnet run --project (Join-Path $PSScriptRoot 'BrowserChecks\BrowserChecks.csproj') --no-build -- $base $cookieFile $artifacts
+        $staffCookieFile = Join-Path $run 'browser-staff-cookies.json'
+        $staffCookieData = @($staffSession.Cookies.GetCookies([Uri]$base) | ForEach-Object { @{Name=$_.Name;Value=$_.Value} })
+        [IO.File]::WriteAllText($staffCookieFile, (ConvertTo-Json -InputObject $staffCookieData))
+        $openTicket = [regex]::Match((Page '/Tickets?status=Open' $staffSession).Content, '/Tickets/Details/\d+').Value
+        & dotnet run --project (Join-Path $PSScriptRoot 'BrowserChecks\BrowserChecks.csproj') --no-build -- $base $cookieFile $artifacts $staffCookieFile $openTicket
         if ($LASTEXITCODE -ne 0) { throw 'Browser checks failed' }
     }
 } finally {

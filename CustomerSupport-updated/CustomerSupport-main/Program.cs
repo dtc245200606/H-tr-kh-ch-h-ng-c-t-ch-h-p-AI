@@ -61,10 +61,13 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
                 var db = context.HttpContext.RequestServices.GetRequiredService<AppDbContext>();
                 var current = await db.Users.AsNoTracking()
                     .Where(user => user.Id == userId)
-                    .Select(user => new { user.IsActive, user.Role })
+                    .Select(user => new { user.IsActive, user.Role, user.PasswordHash })
                     .SingleOrDefaultAsync();
+                // Cookies issued before the stamp claim existed carry none and stay valid until they expire.
+                var stamp = context.Principal?.FindFirstValue(CustomerSupportAI.Controllers.AccountController.PasswordStampClaim);
                 valid = current is not null && current.IsActive
-                    && string.Equals(current.Role, roleClaim, StringComparison.Ordinal);
+                    && string.Equals(current.Role, roleClaim, StringComparison.Ordinal)
+                    && (stamp is null || stamp == PasswordResetTokens.Stamp(current.PasswordHash));
             }
 
             if (!valid)
@@ -80,6 +83,9 @@ builder.Services.AddSingleton<AiSettingsStore>();
 builder.Services.AddSingleton<LoginThrottle>();
 builder.Services.AddScoped<UserAdministrationService>();
 builder.Services.AddHttpClient<AiAssistantService>(client => client.Timeout = TimeSpan.FromSeconds(45));
+builder.Services.AddScoped<TicketAiService>();
+builder.Services.AddSingleton<PasswordResetTokens>();
+builder.Services.AddSingleton<EmailSender>();
 builder.Services.AddRateLimiter(options => {
     options.RejectionStatusCode = 429;
     options.AddPolicy("assistant", context => RateLimitPartition.GetFixedWindowLimiter(
@@ -90,6 +96,18 @@ builder.Services.AddRateLimiter(options => {
 var app = builder.Build();
 
 await DatabaseInitializer.InitializeAsync(app.Services, app.Configuration, app.Logger);
+
+// One-off maintenance commands: add or remove the fictional demo data, then exit without serving.
+if (args.Contains("--seed-demo") || args.Contains("--remove-demo"))
+{
+    await using var scope = app.Services.CreateAsyncScope();
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var appData = Path.Combine(app.Environment.ContentRootPath, "App_Data");
+    Console.WriteLine(args.Contains("--remove-demo")
+        ? await DemoData.RemoveAsync(db, appData)
+        : await DemoData.SeedAsync(db, scope.ServiceProvider.GetRequiredService<IPasswordHasher<SupportUser>>(), appData));
+    return;
+}
 
 if (!app.Environment.IsDevelopment())
 {

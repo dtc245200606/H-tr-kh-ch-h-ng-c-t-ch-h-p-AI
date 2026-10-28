@@ -34,8 +34,30 @@ public sealed class DashboardController(AppDbContext db) : Controller
         }).ToList();
 
         var openQueue = query.Where(t => t.Status == "Open" || t.Status == "In progress");
+
+        // Staff metrics. First response = first team message minus ticket creation, for tickets created in the period.
+        // Ids stand in for time because SQLite cannot aggregate DateTimeOffset.
+        int awaiting = 0, unanswered = 0;
+        TimeSpan? firstResponse = null;
+        if (staff)
+        {
+            awaiting = await openQueue.CountAsync(t =>
+                t.Messages.OrderByDescending(m => m.Id).Select(m => m.Author.Role).FirstOrDefault() == UserRoles.Customer);
+            var firstTeamIds = await db.TicketMessages.Where(m => m.Author.Role != UserRoles.Customer)
+                .GroupBy(m => m.TicketId).Select(g => g.Min(m => m.Id)).ToListAsync();
+            var responses = (await db.TicketMessages.AsNoTracking().Where(m => firstTeamIds.Contains(m.Id))
+                    .Select(m => new { m.CreatedAt, TicketCreated = m.Ticket.CreatedAt }).ToListAsync())
+                .Where(r => r.TicketCreated.ToOffset(VietnamOffset).Date >= from)
+                .Select(r => r.CreatedAt - r.TicketCreated)
+                .Where(d => d >= TimeSpan.Zero)
+                .ToList();
+            if (responses.Count > 0) firstResponse = TimeSpan.FromTicks((long)responses.Average(d => d.Ticks));
+            unanswered = await openQueue.CountAsync(t => !t.Messages.Any(m => m.Author.Role != UserRoles.Customer));
+        }
+
         return View(new DashboardViewModel {
             IsStaff = staff, Total = rows.Count,
+            AwaitingTeam = awaiting, Unanswered = unanswered, AvgFirstResponse = firstResponse,
             Open = rows.Count(t => t.Status == "Open" || t.Status == "In progress"),
             Resolved = rows.Count(t => t.Status == "Resolved" || t.Status == "Closed"),
             Conversations = await db.AssistantTurns.CountAsync(t => t.UserId == id),

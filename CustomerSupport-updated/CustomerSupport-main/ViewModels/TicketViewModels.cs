@@ -10,10 +10,22 @@ public sealed class TicketIndexViewModel
     public string Sort { get; init; } = "id_desc";
     public string Search { get; init; } = string.Empty;
     public string Status { get; init; } = string.Empty;
+    public string Category { get; init; } = string.Empty;
+    /// <summary>Customer the list is narrowed to (staff only), or null.</summary>
+    public SupportUser? Customer { get; init; }
+    public DateOnly? From { get; init; }
+    public DateOnly? To { get; init; }
+    public IReadOnlyList<string> Categories { get; init; } = [];
+    public IReadOnlyDictionary<int, int> MessageCounts { get; init; } = new Dictionary<int, int>();
+    /// <summary>Ticket ids on this page whose newest message came from the customer.</summary>
+    public IReadOnlySet<int> AwaitingTeam { get; init; } = new HashSet<int>();
     public int TotalCount { get; init; }
     public int OpenCount { get; init; }
     public int ResolvedCount { get; init; }
+    /// <summary>Open or in-progress tickets waiting for a team reply (staff only).</summary>
+    public int AwaitingCount { get; init; }
     public bool IsStaff { get; init; }
+    public bool IsFiltered => Search.Length > 0 || Status.Length > 0 || Category.Length > 0 || Customer is not null || From is not null || To is not null;
 }
 
 public sealed class TicketCreateViewModel
@@ -41,6 +53,10 @@ public sealed class TicketDetailsViewModel
 {
     public required SupportTicket Ticket { get; init; }
     public bool IsStaff { get; init; }
+    public IReadOnlyList<string> Categories { get; init; } = [];
+    /// <summary>Whether a Gemini key is configured; the AI panel explains the setup step when it is not.</summary>
+    public bool AiConfigured { get; init; }
+    public int CustomerTicketCount { get; init; }
 }
 
 public sealed class UserListItemViewModel

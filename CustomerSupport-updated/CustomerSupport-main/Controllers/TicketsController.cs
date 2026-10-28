@@ -1,15 +1,17 @@
 using System.Security.Claims;
 using CustomerSupportAI.Data;
 using CustomerSupportAI.Models;
+using CustomerSupportAI.Services;
 using CustomerSupportAI.ViewModels;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 
 namespace CustomerSupportAI.Controllers;
 
 [Authorize]
-public sealed class TicketsController(AppDbContext db) : Controller
+public sealed class TicketsController(AppDbContext db, TicketAiService ticketAi, UserAdministrationService admin) : Controller
 {
     private static readonly string[] Categories =
     [
@@ -24,12 +26,20 @@ public sealed class TicketsController(AppDbContext db) : Controller
 
     private const int PageSize = 20;
 
-    public async Task<IActionResult> Index(string? search, string? status, string? sort, int page = 1)
+    /// <summary>Pseudo-status for the filter: open or in-progress tickets whose newest message came from the customer.</summary>
+    public const string AwaitingFilter = "Awaiting";
+
+    private static readonly TimeSpan VietnamOffset = TimeSpan.FromHours(7);
+
+    public async Task<IActionResult> Index(string? search, string? status, string? category, int? customerId,
+        DateOnly? from, DateOnly? to, string? sort, int page = 1)
     {
+        var staff = IsStaff();
         var tickets = VisibleTickets();
         var totalCount = await tickets.CountAsync();
         var openCount = await tickets.CountAsync(ticket => ticket.Status == "Open" || ticket.Status == "In progress");
         var resolvedCount = await tickets.CountAsync(ticket => ticket.Status == "Resolved");
+        var awaitingCount = staff ? await AwaitingTeam(tickets).CountAsync() : 0;
 
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -38,9 +48,54 @@ public sealed class TicketsController(AppDbContext db) : Controller
                 ticket.Subject.Contains(term) || ticket.TicketNumber.Contains(term));
         }
 
-        if (!string.IsNullOrWhiteSpace(status) && Statuses.Contains(status, StringComparer.Ordinal))
+        if (staff && status == AwaitingFilter)
+        {
+            tickets = AwaitingTeam(tickets);
+        }
+        else if (!string.IsNullOrWhiteSpace(status) && Statuses.Contains(status, StringComparer.Ordinal))
         {
             tickets = tickets.Where(ticket => ticket.Status == status);
+        }
+        else
+        {
+            status = null;
+        }
+
+        category = category is not null && Categories.Contains(category, StringComparer.Ordinal) ? category : null;
+        if (category is not null)
+        {
+            tickets = tickets.Where(ticket => ticket.Category == category);
+        }
+
+        SupportUser? customer = null;
+        if (staff && customerId is { } cid)
+        {
+            customer = await db.Users.AsNoTracking().SingleOrDefaultAsync(user => user.Id == cid && user.Role == UserRoles.Customer);
+            if (customer is not null)
+            {
+                tickets = tickets.Where(ticket => ticket.CustomerId == cid);
+            }
+        }
+
+        if (from is not null && to is not null && from > to)
+        {
+            (from, to) = (to, from);
+        }
+
+        if (from is not null || to is not null)
+        {
+            // SQLite cannot compare DateTimeOffset, so the range (Vietnam dates) is resolved to ticket ids in memory.
+            var lower = from?.ToDateTime(TimeOnly.MinValue);
+            var upper = to?.AddDays(1).ToDateTime(TimeOnly.MinValue);
+            var ids = (await tickets.Select(ticket => new { ticket.Id, ticket.CreatedAt }).ToListAsync())
+                .Where(row =>
+                {
+                    var day = row.CreatedAt.ToOffset(VietnamOffset).DateTime;
+                    return (lower is null || day >= lower) && (upper is null || day < upper);
+                })
+                .Select(row => row.Id)
+                .ToList();
+            tickets = tickets.Where(ticket => ids.Contains(ticket.Id));
         }
 
         // SQLite cannot order by DateTimeOffset, so creation order (Id) stands in for time.
@@ -65,17 +120,38 @@ public sealed class TicketsController(AppDbContext db) : Controller
             .Take(paging.PageSize)
             .ToListAsync();
 
+        // Per row: message count, and whether the newest message is the customer's (the team owes a reply).
+        var pageIds = items.Select(ticket => ticket.Id).ToList();
+        var threads = await db.TicketMessages
+            .Where(message => pageIds.Contains(message.TicketId))
+            .GroupBy(message => message.TicketId)
+            .Select(group => new { TicketId = group.Key, Count = group.Count(), LastId = group.Max(message => message.Id) })
+            .ToListAsync();
+        var lastIds = threads.Select(thread => thread.LastId).ToList();
+        var lastByCustomer = await db.TicketMessages
+            .Where(message => lastIds.Contains(message.Id) && message.Author.Role == UserRoles.Customer)
+            .Select(message => message.TicketId)
+            .ToListAsync();
+
         return View(new TicketIndexViewModel
         {
             Tickets = items,
+            MessageCounts = threads.ToDictionary(thread => thread.TicketId, thread => thread.Count),
+            AwaitingTeam = lastByCustomer.ToHashSet(),
             Paging = paging,
             Sort = sort,
             Search = search?.Trim() ?? string.Empty,
             Status = status ?? string.Empty,
+            Category = category ?? string.Empty,
+            Customer = customer,
+            From = from,
+            To = to,
+            Categories = Categories,
             TotalCount = totalCount,
             OpenCount = openCount,
             ResolvedCount = resolvedCount,
-            IsStaff = IsStaff()
+            AwaitingCount = awaitingCount,
+            IsStaff = staff
         });
     }
 
@@ -127,9 +203,19 @@ public sealed class TicketsController(AppDbContext db) : Controller
                 .ThenInclude(message => message.Author)
             .SingleOrDefaultAsync(item => item.Id == id);
 
-        return ticket is null
-            ? NotFound()
-            : View(new TicketDetailsViewModel { Ticket = ticket, IsStaff = IsStaff() });
+        if (ticket is null)
+        {
+            return NotFound();
+        }
+
+        return View(new TicketDetailsViewModel
+        {
+            Ticket = ticket,
+            IsStaff = IsStaff(),
+            Categories = Categories,
+            AiConfigured = ticketAi.IsConfigured,
+            CustomerTicketCount = IsStaff() ? await db.Tickets.CountAsync(item => item.CustomerId == ticket.CustomerId) : 0
+        });
     }
 
     [HttpPost]
@@ -191,6 +277,106 @@ public sealed class TicketsController(AppDbContext db) : Controller
         TempData["Success"] = "Đã cập nhật trạng thái yêu cầu.";
         return RedirectToAction(nameof(Details), new { id });
     }
+
+    [Authorize(Roles = UserRoles.Admin + "," + UserRoles.Staff)]
+    [HttpPost]
+    public async Task<IActionResult> UpdateCategory(int id, string category)
+    {
+        if (!Categories.Contains(category, StringComparer.Ordinal))
+        {
+            return BadRequest();
+        }
+
+        var ticket = await db.Tickets.SingleOrDefaultAsync(item => item.Id == id);
+        if (ticket is null)
+        {
+            return NotFound();
+        }
+
+        if (ticket.Category != category)
+        {
+            var previous = ticket.Category;
+            ticket.Category = category;
+            ticket.UpdatedAt = DateTimeOffset.UtcNow;
+            await db.SaveChangesAsync();
+            await admin.AuditAsync(User, "ticket.category", ticket.TicketNumber,
+                $"{DisplayText.TicketCategory(previous)} → {DisplayText.TicketCategory(category)}");
+        }
+
+        TempData["Success"] = "Đã cập nhật danh mục yêu cầu.";
+        return RedirectToAction(nameof(Details), new { id });
+    }
+
+    /// <summary>
+    /// Staff AI tools: task = classify | draft | summary. Returns a suggestion as JSON and saves nothing
+    /// to the ticket; staff review it and apply it through the normal forms.
+    /// </summary>
+    [Authorize(Roles = UserRoles.Admin + "," + UserRoles.Staff)]
+    [HttpPost, EnableRateLimiting("assistant")]
+    public async Task<IActionResult> Ai(int id, string task, CancellationToken cancellationToken)
+    {
+        if (task is not ("classify" or "draft" or "summary"))
+        {
+            return BadRequest(new { error = "Tác vụ AI không hợp lệ." });
+        }
+
+        var ticket = await db.Tickets.AsNoTracking()
+            .Include(item => item.Messages).ThenInclude(message => message.Author)
+            .SingleOrDefaultAsync(item => item.Id == id, cancellationToken);
+        if (ticket is null)
+        {
+            return NotFound(new { error = "Không tìm thấy yêu cầu." });
+        }
+
+        object? value = null;
+        string? error;
+        var truncated = false;
+        if (task == "classify")
+        {
+            var result = await ticketAi.ClassifyAsync(ticket, Categories, cancellationToken);
+            error = result.Error;
+            if (result.Value is { } c)
+            {
+                value = new { category = c.Category, categoryText = DisplayText.TicketCategory(c.Category), priority = c.Priority, reason = c.Reason, same = c.Category == ticket.Category };
+            }
+        }
+        else if (task == "draft")
+        {
+            var lastCustomerMessage = ticket.Messages.Where(message => message.Author.Role == UserRoles.Customer)
+                .OrderByDescending(message => message.Id).Select(message => message.Body).FirstOrDefault() ?? string.Empty;
+            var articles = KnowledgeSearch.Find(await db.KnowledgeArticles.AsNoTracking().ToListAsync(cancellationToken),
+                ticket.Subject + " " + lastCustomerMessage);
+            var result = await ticketAi.DraftReplyAsync(ticket, articles, User.Identity?.Name ?? "Đội ngũ hỗ trợ", cancellationToken);
+            (error, truncated) = (result.Error, result.Truncated);
+            if (result.Value is { } text)
+            {
+                value = new { text, sources = articles.Select(a => new { title = a.Title, url = Url.Action("Details", "Knowledge", new { id = a.Id }) }) };
+            }
+        }
+        else
+        {
+            var result = await ticketAi.SummarizeAsync(ticket, cancellationToken);
+            (error, value, truncated) = (result.Error, result.Value, result.Truncated);
+        }
+
+        if (value is null)
+        {
+            return StatusCode(StatusCodes.Status502BadGateway, new { error });
+        }
+
+        await admin.AuditAsync(User, "ai.ticket", ticket.TicketNumber, task switch
+        {
+            "classify" => "AI phân loại yêu cầu",
+            "draft" => "AI soạn nháp phản hồi",
+            _ => "AI tóm tắt lịch sử"
+        });
+        return Ok(new { result = value, truncated, generatedAt = DateTimeOffset.UtcNow.ToOffset(VietnamOffset).ToString("HH:mm dd/MM/yyyy") });
+    }
+
+    /// <summary>Open or in-progress tickets whose newest message was written by the customer.</summary>
+    private static IQueryable<SupportTicket> AwaitingTeam(IQueryable<SupportTicket> tickets) => tickets.Where(ticket =>
+        (ticket.Status == "Open" || ticket.Status == "In progress") &&
+        ticket.Messages.OrderByDescending(message => message.Id).Select(message => message.Author.Role).FirstOrDefault() == UserRoles.Customer);
 
     private IQueryable<SupportTicket> VisibleTickets()
     {

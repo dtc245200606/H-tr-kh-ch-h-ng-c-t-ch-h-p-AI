@@ -46,6 +46,10 @@
         <section class="card" aria-labelledby="recent-tickets-title">
             <div class="card-header">
                 <div><h2 id="recent-tickets-title">Yêu cầu hỗ trợ gần đây</h2><p class="card-subtitle">Tối đa 10 yêu cầu mới nhất của tài khoản này.</p></div>
+                @if (account.Role == UserRoles.Customer && Model.TicketCount > 0)
+                {
+                    <a class="card-link" asp-controller="Tickets" asp-action="Index" asp-route-customerId="@account.Id">Xem tất cả @Model.TicketCount yêu cầu<icon name="chevron-right" class="icon-sm" /></a>
+                }
             </div>
             @if (Model.RecentTickets.Count == 0)
             {

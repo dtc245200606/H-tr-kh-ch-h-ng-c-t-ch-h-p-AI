@@ -14,7 +14,7 @@
     (string Label, string Controller, string Action)? section = controller switch
     {
         "Dashboard" when action == "Activity" => ("Tổng quan", "Dashboard", "Index"),
-        "Tickets" => (isAdmin || isStaff ? "Yêu cầu hỗ trợ" : "Yêu cầu của tôi", "Tickets", "Index"),
+        "Tickets" => (isAdmin || isStaff ? "Hộp thư hỗ trợ" : "Yêu cầu của tôi", "Tickets", "Index"),
         "Assistant" => ("Trợ lý", "Assistant", "Index"),
         "Knowledge" => ("Kho hướng dẫn", "Knowledge", "Index"),
         "Account" => ("Tài khoản", "Account", "Profile"),
@@ -23,15 +23,28 @@
         _ => null
     };
     bool Active(string c, string? a = null) => controller == c && (a is null || action == a);
+    var staffDirectory = Active("Admin", "Users") && Context.Request.Query["role"] == UserRoles.Staff;
 
-    var navMain = new (string Controller, string Action, string Icon, string Label, bool Active)[]
+    // Navigation groups: (group label, items). Only pages that exist and that the role may open.
+    var nav = new List<(string Group, (string Controller, string Action, string Icon, string Label, bool Active, object? Route)[] Items)>
     {
-        ("Dashboard", "Index", "layout-dashboard", "Tổng quan", Active("Dashboard", "Index")),
-        ("Tickets", "Index", "ticket", isAdmin || isStaff ? "Yêu cầu hỗ trợ" : "Yêu cầu của tôi", Active("Tickets")),
-        ("Assistant", "Index", "sparkles", "Trợ lý thông minh", Active("Assistant")),
-        ("Knowledge", "Index", "book-open", "Kho hướng dẫn", Active("Knowledge")),
-        ("Dashboard", "Activity", "activity", "Hoạt động", Active("Dashboard", "Activity")),
+        ("Tổng quan", [("Dashboard", "Index", "layout-dashboard", "Dashboard", Active("Dashboard", "Index"), null)]),
+        ("Hỗ trợ khách hàng", [
+            ("Tickets", "Index", "inbox", isAdmin || isStaff ? "Hộp thư hỗ trợ" : "Yêu cầu của tôi", Active("Tickets"), null),
+            .. (isAdmin || isStaff ? new[] { ("Customers", "Index", "users", "Khách hàng", Active("Customers"), (object?)null) } : []),
+            ("Dashboard", "Activity", "activity", "Lịch sử trao đổi", Active("Dashboard", "Activity"), null)]),
+        ("Trí tuệ nhân tạo", [
+            ("Assistant", "Index", "sparkles", "Trợ lý AI", Active("Assistant"), null),
+            ("Knowledge", "Index", "book-open", "Kho hướng dẫn", Active("Knowledge"), null)]),
     };
+    if (isAdmin)
+    {
+        nav.Add(("Quản lý vận hành", [("Admin", "Users", "user-cog", "Nhân viên hỗ trợ", staffDirectory, new { role = UserRoles.Staff })]));
+        nav.Add(("Hệ thống", [
+            ("Admin", "Users", "shield-check", "Tài khoản & phân quyền", controller == "Admin" && action != "AuditLog" && !staffDirectory, null),
+            ("Admin", "AuditLog", "history", "Nhật ký hoạt động", Active("Admin", "AuditLog"), null),
+            ("Settings", "Index", "settings", "Cấu hình AI", Active("Settings"), null)]));
+    }
 }
 <!DOCTYPE html>
 <html lang="vi">
@@ -68,30 +81,15 @@
             </button>
         </div>
         <nav class="sidebar-nav" aria-label="Điều hướng chính">
-            <div class="nav-group">
-                <p class="nav-group-label">Không gian hỗ trợ</p>
-                @foreach (var item in navMain)
-                {
-                    <a class="nav-link @(item.Active ? "is-active" : "")" aria-current="@(item.Active ? "page" : null)" data-tooltip="@item.Label" asp-controller="@item.Controller" asp-action="@item.Action"><icon name="@item.Icon" /><span class="nav-label">@item.Label</span></a>
-                }
-            </div>
-            @if (isStaff)
+            @foreach (var group in nav)
             {
-            <div class="nav-group">
-                <p class="nav-group-label">Nhân viên hỗ trợ</p>
-                <a class="nav-link @(Active("Customers") ? "is-active" : "")" aria-current="@(Active("Customers") ? "page" : null)" data-tooltip="Quản lý khách hàng" asp-controller="Customers" asp-action="Index"><icon name="users" /><span class="nav-label">Quản lý khách hàng</span></a>
-            </div>
-            }
-            @if (isAdmin)
-            {
-            <div class="nav-group">
-                <p class="nav-group-label">Quản trị hệ thống</p>
-                @{ var usersActive = controller == "Admin" && action != "AuditLog"; }
-                <a class="nav-link @(usersActive ? "is-active" : "")" aria-current="@(usersActive ? "page" : null)" data-tooltip="Tài khoản &amp; quyền" asp-controller="Admin" asp-action="Users"><icon name="shield-check" /><span class="nav-label">Tài khoản &amp; quyền</span></a>
-                <a class="nav-link @(Active("Customers") ? "is-active" : "")" aria-current="@(Active("Customers") ? "page" : null)" data-tooltip="Quản lý khách hàng" asp-controller="Customers" asp-action="Index"><icon name="users" /><span class="nav-label">Quản lý khách hàng</span></a>
-                <a class="nav-link @(Active("Admin", "AuditLog") ? "is-active" : "")" aria-current="@(Active("Admin", "AuditLog") ? "page" : null)" data-tooltip="Nhật ký hoạt động" asp-controller="Admin" asp-action="AuditLog"><icon name="history" /><span class="nav-label">Nhật ký hoạt động</span></a>
-                <a class="nav-link @(Active("Settings") ? "is-active" : "")" aria-current="@(Active("Settings") ? "page" : null)" data-tooltip="Cấu hình AI" asp-controller="Settings" asp-action="Index"><icon name="settings" /><span class="nav-label">Cấu hình AI</span></a>
-            </div>
+                <div class="nav-group">
+                    <p class="nav-group-label">@group.Group</p>
+                    @foreach (var item in group.Items)
+                    {
+                        <a class="nav-link @(item.Active ? "is-active" : "")" aria-current="@(item.Active ? "page" : null)" data-tooltip="@item.Label" href="@Url.Action(item.Action, item.Controller, item.Route)"><icon name="@item.Icon" /><span class="nav-label">@item.Label</span></a>
+                    }
+                </div>
             }
             <div class="sidebar-help">
                 <icon name="life-buoy" />

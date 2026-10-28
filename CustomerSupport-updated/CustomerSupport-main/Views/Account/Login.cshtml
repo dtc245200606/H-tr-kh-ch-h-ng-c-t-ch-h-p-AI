@@ -43,7 +43,10 @@
                 </span>
                 <span asp-validation-for="Password" class="field-error"></span>
             </div>
-            <label class="check"><input asp-for="RememberMe" /> <span>Duy trì đăng nhập</span></label>
+            <div class="auth-row">
+                <label class="check"><input asp-for="RememberMe" /> <span>Duy trì đăng nhập</span></label>
+                <a asp-action="ForgotPassword">Quên mật khẩu?</a>
+            </div>
             <button class="btn btn-primary btn-lg btn-block" type="submit"><icon name="log-in" />Đăng nhập</button>
         </form>
         <p class="auth-switch">Chưa có tài khoản? <a asp-action="Register">Đăng ký tài khoản khách hàng</a></p>
