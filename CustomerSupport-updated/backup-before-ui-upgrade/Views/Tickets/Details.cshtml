@@ -1,0 +1,104 @@
+@model CustomerSupportAI.ViewModels.TicketDetailsViewModel
+@{
+    ViewData["Title"] = Model.Ticket.TicketNumber;
+    var statusClass = Model.Ticket.Status.ToLowerInvariant().Replace(" ", "-");
+}
+
+<a class="back-link" asp-action="Index">&larr; @(Model.IsStaff ? "Hàng đợi hỗ trợ" : "Yêu cầu của tôi")</a>
+<div class="detail-layout">
+    <main class="detail-main">
+        <header class="detail-heading">
+            <span class="eyebrow">YÊU CẦU @Model.Ticket.TicketNumber</span>
+            <h1>@Model.Ticket.Subject</h1>
+            <div class="detail-meta">
+<span class="status status-@statusClass">
+<i>
+</i>@DisplayText.TicketStatus(Model.Ticket.Status)</span>
+<span>@DisplayText.TicketCategory(Model.Ticket.Category)</span>
+<span>Tạo ngày @Model.Ticket.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy")</span>
+</div>
+        </header>
+        <section class="conversation surface">
+            <div class="section-heading">
+<div>
+<h2>Nội dung trao đổi</h2>
+<p>Phản hồi được chia sẻ với đội ngũ hỗ trợ.</p>
+</div>
+</div>
+            <div class="message-list">
+                @foreach (var message in Model.Ticket.Messages.OrderBy(item => item.Id))
+                {
+                    var isTeam = message.Author.Role != CustomerSupportAI.Models.UserRoles.Customer;
+                    <article class="message-entry @(isTeam ? "message-team" : "message-customer")">
+                        <div class="message-avatar">@message.Author.DisplayName.Substring(0, 1).ToUpperInvariant()</div>
+                        <div class="message-content">
+<div class="message-byline">
+<strong>@message.Author.DisplayName</strong>
+<span>@(isTeam ? "Đội ngũ hỗ trợ" : "Khách hàng") · @message.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</span>
+</div>
+<p>@message.Body</p>
+</div>
+                    </article>
+                }
+            </div>
+            @if (Model.Ticket.Status != "Closed")
+            {
+                <form asp-action="Reply" method="post" class="reply-form">
+                    <input type="hidden" name="TicketId" value="@Model.Ticket.Id" />
+                    <label for="reply-body">Gửi phản hồi</label>
+                    <textarea id="reply-body" name="Body" rows="4" maxlength="4000" required placeholder="Nhập nội dung phản hồi..." >
+</textarea>
+                    <div class="reply-footer">
+<span>Không gửi mật khẩu hoặc thông tin thanh toán trong tin nhắn.</span>
+<button class="button button-primary" type="submit">Gửi phản hồi <span aria-hidden="true">&rarr;</span>
+</button>
+</div>
+                </form>
+            }
+            else
+            {
+                <div class="closed-note">Yêu cầu này đã đóng. Hãy liên hệ đội ngũ hỗ trợ nếu bạn cần trợ giúp thêm.</div>
+            }
+        </section>
+    </main>
+    <aside class="detail-aside surface">
+        <span class="eyebrow">CHI TIẾT YÊU CẦU</span>
+        <dl class="detail-list">
+<div>
+<dt>Khách hàng</dt>
+<dd>@Model.Ticket.Customer.DisplayName</dd>
+</div>
+<div>
+<dt>Email</dt>
+<dd>@Model.Ticket.Customer.Email</dd>
+</div>
+<div>
+<dt>Danh mục</dt>
+<dd>@DisplayText.TicketCategory(Model.Ticket.Category)</dd>
+</div>
+<div>
+<dt>Thời gian tạo</dt>
+<dd>@Model.Ticket.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</dd>
+</div>
+</dl>
+        @if (Model.IsStaff)
+        {
+            <form asp-action="UpdateStatus" method="post" class="status-form">
+                <input type="hidden" name="id" value="@Model.Ticket.Id" />
+                <label for="status">Cập nhật trạng thái</label>
+                <select id="status" name="status">
+<option value="Open" selected="@(Model.Ticket.Status == "Open" ? "selected" : null)">Mới tiếp nhận</option>
+<option value="In progress" selected="@(Model.Ticket.Status == "In progress" ? "selected" : null)">Đang xử lý</option>
+<option value="Resolved" selected="@(Model.Ticket.Status == "Resolved" ? "selected" : null)">Đã giải quyết</option>
+<option value="Closed" selected="@(Model.Ticket.Status == "Closed" ? "selected" : null)">Đã đóng</option>
+</select>
+                <button class="button button-secondary button-wide" type="submit">Lưu trạng thái</button>
+            </form>
+        }
+        <a class="aside-assistant" asp-controller="Assistant" asp-action="Index">
+<span>✳</span>
+<strong>Cần giải đáp nhanh?</strong>
+<small>Mở trợ lý AI</small>
+</a>
+    </aside>
+</div>

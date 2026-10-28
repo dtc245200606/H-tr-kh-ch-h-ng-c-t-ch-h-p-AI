@@ -1,0 +1,23 @@
+@model CustomerSupportAI.ViewModels.ActivityViewModel
+@{ ViewData["Title"] = "Hoạt động"; }
+<header class="page-heading">
+<div>
+<span class="eyebrow">THEO DÕI TRAO ĐỔI</span>
+<h1>Hoạt động gần đây</h1>
+<p>50 tin nhắn gần nhất trong các yêu cầu bạn được phép xem.</p>
+</div>
+<a class="button button-secondary" asp-controller="Tickets" asp-action="Index">Xem yêu cầu →</a>
+</header>
+<section class="panel activity-feed">@if(Model.Messages.Count == 0){<div class="empty-state">
+<h3>Chưa có hoạt động</h3>
+<p>Tin nhắn và phản hồi hỗ trợ sẽ xuất hiện tại đây.</p>
+</div>}@foreach(var m in Model.Messages){<article class="activity-item">
+<span class="message-avatar">@m.Author.DisplayName[..1]</span>
+<div>
+<strong>@m.Author.DisplayName</strong>
+<span> đã gửi tin nhắn trong </span>
+<a asp-controller="Tickets" asp-action="Details" asp-route-id="@m.TicketId">@m.Ticket.TicketNumber</a>
+<p>@(m.Body.Length > 180 ? m.Body[..180] + "…" : m.Body)</p>
+<small>@m.CreatedAt.ToOffset(TimeSpan.FromHours(7)).ToString("dd/MM/yyyy HH:mm")</small>
+</div>
+</article>}</section>

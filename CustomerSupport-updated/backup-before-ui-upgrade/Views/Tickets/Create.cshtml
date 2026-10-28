@@ -1,0 +1,47 @@
+@model CustomerSupportAI.ViewModels.TicketCreateViewModel
+@{
+    ViewData["Title"] = "Tạo yêu cầu hỗ trợ";
+}
+
+<a class="back-link" asp-action="Index">&larr; Tất cả yêu cầu</a>
+<section class="form-page">
+    <header class="page-heading compact-heading">
+<div>
+<span class="eyebrow">CHĂM SÓC KHÁCH HÀNG</span>
+<h1>Chúng tôi có thể giúp gì cho bạn?</h1>
+<p>Mô tả vấn đề, đội ngũ hỗ trợ sẽ sớm liên hệ với bạn.</p>
+</div>
+</header>
+    <form asp-action="Create" method="post" class="surface form-stack">
+        <div asp-validation-summary="ModelOnly" class="validation-summary">
+</div>
+        <label asp-for="Subject">Tiêu đề yêu cầu</label>
+        <input asp-for="Subject" maxlength="120" placeholder="Tóm tắt ngắn gọn vấn đề của bạn" />
+        <span asp-validation-for="Subject" class="field-error">
+</span>
+        <label asp-for="Category">Danh mục</label>
+        <select asp-for="Category">
+            <option value="">Chọn danh mục</option>
+            <option value="Product support">Hỗ trợ sản phẩm</option>
+<option value="Billing">Hóa đơn và thanh toán</option>
+<option value="Warranty &amp; repair">Bảo hành và sửa chữa</option>
+<option value="Account access">Truy cập tài khoản</option>
+<option value="Other">Khác</option>
+        </select>
+        <span asp-validation-for="Category" class="field-error">
+</span>
+        <label asp-for="FirstMessage">Nội dung yêu cầu</label>
+        <textarea asp-for="FirstMessage" rows="7" maxlength="4000" placeholder="Mô tả chi tiết để chúng tôi hiểu và hỗ trợ bạn tốt hơn.">
+</textarea>
+        <span asp-validation-for="FirstMessage" class="field-error">
+</span>
+        <div class="form-footer">
+<span>Chỉ bạn và đội ngũ hỗ trợ mới xem được yêu cầu này.</span>
+<div>
+<a class="button button-secondary" asp-action="Index">Hủy</a>
+<button class="button button-primary" type="submit">Gửi yêu cầu <span aria-hidden="true">&rarr;</span>
+</button>
+</div>
+</div>
+    </form>
+</section>

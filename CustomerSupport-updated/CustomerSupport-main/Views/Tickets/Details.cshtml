@@ -1,0 +1,100 @@
+@model CustomerSupportAI.ViewModels.TicketDetailsViewModel
+@{
+    ViewData["Title"] = Model.Ticket.TicketNumber;
+    var ticket = Model.Ticket;
+    var local = TimeSpan.FromHours(7);
+}
+
+<a class="back-link" asp-action="Index"><icon name="arrow-left" class="icon-sm" />@(Model.IsStaff ? "Hàng đợi hỗ trợ" : "Yêu cầu của tôi")</a>
+<header class="page-header">
+    <div>
+        <span class="eyebrow">Yêu cầu <span class="ticket-code">@ticket.TicketNumber</span></span>
+        <h1>@ticket.Subject</h1>
+        <div class="ticket-meta">
+            <span class="@DisplayText.TicketStatusBadge(ticket.Status)">@DisplayText.TicketStatus(ticket.Status)</span>
+            <span><icon name="file-text" />@DisplayText.TicketCategory(ticket.Category)</span>
+            <span><icon name="calendar" />Tạo ngày @ticket.CreatedAt.ToOffset(local).ToString("dd/MM/yyyy")</span>
+            <span><icon name="message-square" />@ticket.Messages.Count tin nhắn</span>
+        </div>
+    </div>
+</header>
+
+<div class="grid-main-aside">
+    <section class="card" aria-labelledby="thread-title">
+        <div class="card-header">
+            <div><h2 id="thread-title">Nội dung trao đổi</h2><p class="card-subtitle">Phản hồi được chia sẻ giữa khách hàng và đội ngũ hỗ trợ.</p></div>
+        </div>
+        <div class="thread">
+            @foreach (var message in ticket.Messages.OrderBy(item => item.Id))
+            {
+                var isTeam = message.Author.Role != UserRoles.Customer;
+                <article class="message @(isTeam ? "message-team" : "message-customer")">
+                    <span class="avatar @(isTeam ? "avatar-team" : "")">@message.Author.DisplayName[..1].ToUpperInvariant()</span>
+                    <div class="message-bubble">
+                        <div class="message-byline">
+                            <strong>@message.Author.DisplayName</strong>
+                            <span>@(isTeam ? "Đội ngũ hỗ trợ" : "Khách hàng") · @message.CreatedAt.ToOffset(local).ToString("dd/MM/yyyy HH:mm")</span>
+                        </div>
+                        <p>@message.Body</p>
+                    </div>
+                </article>
+            }
+        </div>
+        @if (ticket.Status != "Closed")
+        {
+            <form asp-action="Reply" method="post" class="reply-form">
+                <input type="hidden" name="TicketId" value="@ticket.Id" />
+                <label class="field-label is-required" for="reply-body">Gửi phản hồi</label>
+                <textarea id="reply-body" name="Body" rows="4" maxlength="4000" required placeholder="Nhập nội dung phản hồi…"></textarea>
+                <div class="reply-form-footer">
+                    <span><icon name="lock" class="icon-sm" />Không gửi mật khẩu hoặc thông tin thanh toán trong tin nhắn.</span>
+                    <button class="btn btn-primary" type="submit"><icon name="send" />Gửi phản hồi</button>
+                </div>
+            </form>
+        }
+        else
+        {
+            <div class="closed-note"><icon name="lock" />Yêu cầu này đã đóng nên không nhận thêm phản hồi. Bạn có thể tạo yêu cầu mới và ghi mã @ticket.TicketNumber.</div>
+        }
+    </section>
+
+    <aside class="stack" aria-label="Chi tiết yêu cầu">
+        @if (Model.IsStaff)
+        {
+            <section class="card">
+                <div class="card-header"><h2>Xử lý yêu cầu</h2></div>
+                <form asp-action="UpdateStatus" method="post" class="card-body form-stack">
+                    <input type="hidden" name="id" value="@ticket.Id" />
+                    <div class="field">
+                        <label class="field-label" for="status">Trạng thái</label>
+                        <select id="status" name="status">
+                            @foreach (var s in new[] { "Open", "In progress", "Resolved", "Closed" })
+                            {
+                                <option value="@s" selected="@(ticket.Status == s ? "selected" : null)">@DisplayText.TicketStatus(s)</option>
+                            }
+                        </select>
+                        <span class="field-hint">Khi nhân viên phản hồi, yêu cầu mới tự chuyển sang "Đang xử lý".</span>
+                    </div>
+                    <button class="btn btn-primary btn-block" type="submit"><icon name="check" />Lưu trạng thái</button>
+                </form>
+            </section>
+        }
+        <section class="card">
+            <div class="card-header"><h2>Thông tin</h2></div>
+            <div class="card-body">
+                <dl class="detail-list">
+                    <div><dt>Khách hàng</dt><dd>@ticket.Customer.DisplayName</dd></div>
+                    <div><dt>Email</dt><dd>@ticket.Customer.Email</dd></div>
+                    <div><dt>Danh mục</dt><dd>@DisplayText.TicketCategory(ticket.Category)</dd></div>
+                    <div><dt>Thời gian tạo</dt><dd>@ticket.CreatedAt.ToOffset(local).ToString("dd/MM/yyyy HH:mm")</dd></div>
+                    <div><dt>Cập nhật</dt><dd>@ticket.UpdatedAt.ToOffset(local).ToString("dd/MM/yyyy HH:mm")</dd></div>
+                </dl>
+            </div>
+        </section>
+        <a class="card card-interactive assist-card" asp-controller="Assistant" asp-action="Index">
+            <span class="bot-avatar"><icon name="sparkles" /></span>
+            <span><strong>Cần giải đáp nhanh?</strong><small>Mở trợ lý AI</small></span>
+            <icon name="chevron-right" />
+        </a>
+    </aside>
+</div>

@@ -1,0 +1,42 @@
+@model CustomerSupportAI.Services.AiSettingsForm
+@{ ViewData["Title"] = "Cấu hình AI"; }
+<header class="page-heading">
+<div>
+<span class="eyebrow">QUẢN TRỊ TÍCH HỢP</span>
+<h1>Cấu hình trợ lý AI</h1>
+<p>Kết nối Gemini với kho hướng dẫn và cuộc hội thoại của khách hàng.</p>
+</div>
+<span class="date-pill">@(Model.HasKey ? "Đã cấu hình API key" : "Chưa có API key")</span>
+</header>
+<div class="dashboard-grid">
+<section class="panel">
+<h2>Kết nối Gemini</h2>
+<form class="form-stack" method="post">
+<div asp-validation-summary="All" class="validation-summary">
+</div>
+<label asp-for="Model">Model</label>
+<input asp-for="Model"/>
+<label asp-for="ApiKey">API key mới</label>
+<input asp-for="ApiKey" type="password" autocomplete="new-password" placeholder="Để trống để giữ key hiện tại"/>
+<span class="form-hint">Key được mã hóa trên máy chủ và không hiển thị lại trên giao diện.</span>
+<label class="check-row">
+<input asp-for="RemoveKey"/> Ngắt kết nối AI và dùng kho hướng dẫn</label>
+<button class="button button-primary" type="submit">Lưu cấu hình</button>
+</form>
+<form asp-action="Test" method="post" class="settings-test">
+<button class="button button-secondary" type="submit">Kiểm tra kết nối thực tế</button>
+</form>
+</section>
+<section class="panel">
+<span class="eyebrow">CÁCH HOẠT ĐỘNG</span>
+<h2>Trả lời có cơ sở</h2>
+<ol class="steps-list">
+<li>Lấy API key tại <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">Google AI Studio</a>.</li>
+<li>Nhập key, tên model được cấp quyền và lưu cấu hình.</li>
+<li>Kiểm tra kết nối, sau đó thử câu hỏi ở trang Trợ lý.</li>
+</ol>
+<p>AI nhận câu hỏi, tối đa 6 lượt hội thoại gần đây, hướng dẫn liên quan và tóm tắt yêu cầu của chính khách hàng. Lịch sử được lưu để tiếp tục trao đổi.</p>
+<p>Khi thiếu key hoặc nhà cung cấp gặp lỗi, hệ thống hiển thị rõ chế độ tra cứu hướng dẫn.</p>
+<a class="text-link" asp-controller="Knowledge" asp-action="Index">Quản lý kho hướng dẫn →</a>
+</section>
+</div>

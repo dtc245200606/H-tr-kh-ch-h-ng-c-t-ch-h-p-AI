@@ -1,0 +1,28 @@
+@model CustomerSupportAI.ViewModels.KnowledgeViewModel
+@{ ViewData["Title"] = "Kho hướng dẫn"; }
+<header class="page-heading">
+<div>
+<span class="eyebrow">CÂU TRẢ LỜI TRONG TẦM TAY</span>
+<h1>Kho hướng dẫn</h1>
+<p>Tìm hiểu cách sử dụng hệ thống và chuẩn bị thông tin cần hỗ trợ.</p>
+</div>@if(User.IsInRole(CustomerSupportAI.Models.UserRoles.Admin)){<a class="button button-primary" asp-action="Edit">＋ Viết hướng dẫn</a>}</header>
+<section class="knowledge-search panel">
+<h2>Bạn đang tìm điều gì?</h2>
+<form class="filter-bar" method="get">
+<label class="search-field">
+<span>⌕</span>
+<input name="search" value="@Model.Search" placeholder="Ví dụ: tài khoản, thanh toán, bảo hành..." aria-label="Tìm hướng dẫn"/>
+</label>
+<button class="button button-primary" type="submit">Tìm hướng dẫn</button>@if(Model.Search.Length > 0 || Model.Category.Length > 0){<a class="button button-secondary" asp-action="Index">Xóa bộ lọc</a>}</form>
+<div class="topic-chips">@foreach(var topic in new[]{"Tài khoản","Yêu cầu hỗ trợ","Thanh toán","Sản phẩm","Trợ lý"}){<a asp-action="Index" asp-route-category="@topic">@topic</a>}</div>
+</section>
+<div class="article-grid">@foreach(var a in Model.Articles){<a class="article-card" asp-action="Details" asp-route-id="@a.Id">
+<span class="article-category">@a.Category</span>
+<h2>@a.Title</h2>
+<p>@(a.Body.Length > 150 ? a.Body[..150] + "…" : a.Body)</p>
+<span class="text-link">Đọc hướng dẫn →</span>
+</a>}</div>@if(Model.Articles.Count == 0){<section class="empty-state">
+<h3>Chưa có hướng dẫn phù hợp</h3>
+<p>Thử từ khóa khác hoặc hỏi trợ lý để được gợi ý.</p>
+<a class="button button-primary" asp-controller="Assistant" asp-action="Index">Hỏi trợ lý</a>
+</section>}

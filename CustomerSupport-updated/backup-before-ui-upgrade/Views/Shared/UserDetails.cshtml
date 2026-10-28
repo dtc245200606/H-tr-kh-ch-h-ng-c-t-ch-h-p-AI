@@ -1,0 +1,127 @@
+@model CustomerSupportAI.ViewModels.UserDetailsViewModel
+@{
+    var account = Model.User;
+    var isCustomers = Model.Portal == "Customers";
+    ViewData["Title"] = account.DisplayName;
+}
+
+<a class="back-link" asp-controller="@Model.Portal" asp-action="@(isCustomers ? "Index" : "Users")">&larr; @(isCustomers ? "Danh sách khách hàng" : "Tài khoản và quyền")</a>
+<header class="page-heading">
+<div>
+<span class="eyebrow">@(isCustomers ? "HỒ SƠ KHÁCH HÀNG" : "HỒ SƠ TÀI KHOẢN")</span>
+<h1>@account.DisplayName</h1>
+<p>
+<span class="role-tag role-@account.Role.ToLowerInvariant()">@DisplayText.Role(account.Role)</span>
+<span class="state-tag @(account.IsActive ? "state-active" : "state-locked")">@(account.IsActive ? "Hoạt động" : "Đã khóa")</span>
+@if (Model.IsSelf)
+{
+<span class="muted"> · Đây là tài khoản của bạn</span>
+}
+</p>
+</div>
+<div class="admin-toolbar">
+<a class="button button-primary" asp-controller="@Model.Portal" asp-action="Edit" asp-route-id="@account.Id">Sửa thông tin</a>
+@if (!Model.IsSelf)
+{
+<form asp-controller="@Model.Portal" asp-action="SetActive" asp-route-id="@account.Id" method="post" class="inline-form">
+<input type="hidden" name="active" value="@(account.IsActive ? "false" : "true")" />
+<button class="button button-secondary" type="submit">@(account.IsActive ? "Khóa tài khoản" : "Mở khóa")</button>
+</form>
+}
+</div>
+</header>
+
+<div class="detail-layout">
+<main class="detail-main">
+<section class="data-section">
+<div class="section-heading">
+<div>
+<h2>Yêu cầu hỗ trợ gần đây</h2>
+<p>Tối đa 10 yêu cầu mới nhất của tài khoản này.</p>
+</div>
+<span class="result-count">@Model.TicketCount yêu cầu</span>
+</div>
+@if (Model.RecentTickets.Count == 0)
+{
+<div class="empty-state">
+<span class="empty-mark">—</span>
+<h3>Chưa có yêu cầu nào</h3>
+</div>
+}
+else
+{
+<div class="table-scroll">
+<table class="data-table">
+<thead>
+<tr>
+<th>Yêu cầu</th>
+<th>Danh mục</th>
+<th>Trạng thái</th>
+<th>Cập nhật</th>
+</tr>
+</thead>
+<tbody>
+@foreach (var ticket in Model.RecentTickets)
+{
+var statusClass = ticket.Status.ToLowerInvariant().Replace(" ", "-");
+<tr>
+<td>
+<a class="ticket-link" asp-controller="Tickets" asp-action="Details" asp-route-id="@ticket.Id">@ticket.TicketNumber<span>@ticket.Subject</span></a>
+</td>
+<td><span class="category-text">@DisplayText.TicketCategory(ticket.Category)</span></td>
+<td><span class="status status-@statusClass"><i></i>@DisplayText.TicketStatus(ticket.Status)</span></td>
+<td>@ticket.UpdatedAt.ToLocalTime().ToString("dd/MM/yyyy")</td>
+</tr>
+}
+</tbody>
+</table>
+</div>
+}
+</section>
+
+@if (!Model.IsSelf)
+{
+<section class="danger-zone">
+<h3>Xóa tài khoản</h3>
+<p>Xóa vĩnh viễn tài khoản cùng các yêu cầu hỗ trợ và hội thoại trợ lý của tài khoản này. Thao tác không thể hoàn tác. Nếu chỉ muốn ngăn đăng nhập, hãy khóa tài khoản.</p>
+<form asp-controller="@Model.Portal" asp-action="Delete" asp-route-id="@account.Id" method="post"
+onsubmit="return confirm('Xóa vĩnh viễn tài khoản này cùng các yêu cầu và hội thoại liên quan? Thao tác không thể hoàn tác.');">
+<button class="button button-danger" type="submit">Xóa tài khoản</button>
+</form>
+</section>
+}
+</main>
+<aside class="detail-aside surface">
+<span class="eyebrow">THÔNG TIN TÀI KHOẢN</span>
+<dl class="detail-list">
+<div>
+<dt>Họ và tên</dt>
+<dd>@account.DisplayName</dd>
+</div>
+<div>
+<dt>Email</dt>
+<dd>@account.Email</dd>
+</div>
+<div>
+<dt>Vai trò</dt>
+<dd>@DisplayText.Role(account.Role)</dd>
+</div>
+<div>
+<dt>Ngày tham gia</dt>
+<dd>@account.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</dd>
+</div>
+<div>
+<dt>Số yêu cầu</dt>
+<dd>@Model.TicketCount</dd>
+</div>
+<div>
+<dt>Phản hồi đã gửi</dt>
+<dd>@Model.MessageCount</dd>
+</div>
+<div>
+<dt>Lượt hỏi trợ lý</dt>
+<dd>@Model.ConversationCount</dd>
+</div>
+</dl>
+</aside>
+</div>

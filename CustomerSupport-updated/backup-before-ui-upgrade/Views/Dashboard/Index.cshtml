@@ -1,0 +1,130 @@
+@model CustomerSupportAI.ViewModels.DashboardViewModel
+@{ ViewData["Title"] = "Tổng quan"; var percent = Model.Total == 0 ? 0 : Model.Resolved * 100 / Model.Total; }
+<header class="page-heading">
+<div>
+<span class="eyebrow">MỌI KẾT NỐI ĐỀU QUAN TRỌNG</span>
+<h1>Xin chào, @User.Identity?.Name?.Split(' ').LastOrDefault() <span class="greeting-dot">✦</span>
+</h1>
+<p>@(Model.IsStaff ? "Cùng mang đến trải nghiệm hỗ trợ tốt hơn cho khách hàng." : "Chúng tôi ở đây để giúp bạn giải quyết từng vấn đề.")</p>
+</div>
+<span class="date-pill">@DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(7)).ToString("dd/MM/yyyy") · Không gian hỗ trợ</span>
+</header>
+<section class="welcome-banner">
+<div>
+<span class="banner-tag">CUSTOMER SUPPORT, SIMPLIFIED</span>
+<h2>Hỗ trợ đúng lúc.<br/>Giải đáp rõ ràng.</h2>
+<p>Tra cứu hướng dẫn, trò chuyện với trợ lý và kết nối đội ngũ hỗ trợ trong một không gian.</p>
+<div class="action-row">
+<a class="button button-white" asp-controller="Assistant" asp-action="Index">✳ Hỏi trợ lý</a>
+<a class="button button-outline" asp-controller="@(Model.IsStaff ? "Tickets" : "Tickets")" asp-action="@(Model.IsStaff ? "Index" : "Create")">@(Model.IsStaff ? "Mở hàng đợi" : "Tạo yêu cầu") →</a>
+</div>
+</div>
+<div class="banner-art" aria-hidden="true">
+<div class="orbit orbit-one">
+</div>
+<div class="orbit orbit-two">
+</div>
+<div class="art-card">
+<span class="art-icon">✳</span>
+<strong>Luôn có hướng giải quyết</strong>
+<span>Hướng dẫn → Trợ lý → Nhân viên</span>
+<div class="art-lines">
+<i>
+</i>
+<i>
+</i>
+<i>
+</i>
+</div>
+<span class="art-check">✓ Một nơi cho mọi trao đổi</span>
+</div>
+</div>
+</section>
+<section class="stats-grid" aria-label="Số liệu thực tế">
+<article class="stat-card">
+<span class="stat-icon blue">▤</span>
+<span>Tổng yêu cầu</span>
+<strong>@Model.Total</strong>
+<small>Toàn bộ yêu cầu của @(Model.IsStaff ? "khách hàng" : "bạn")</small>
+</article>
+<article class="stat-card">
+<span class="stat-icon amber">◷</span>
+<span>Cần xử lý</span>
+<strong>@Model.Open</strong>
+<small>Mới tiếp nhận và đang xử lý</small>
+</article>
+<article class="stat-card">
+<span class="stat-icon teal">✓</span>
+<span>Đã hoàn tất</span>
+<strong>@Model.Resolved</strong>
+<small>Đã giải quyết hoặc đã đóng</small>
+</article>
+<article class="stat-card">
+<span class="stat-icon violet">✳</span>
+<span>Trao đổi với trợ lý</span>
+<strong>@Model.Conversations</strong>
+<small>Lượt hỏi trong lịch sử của bạn</small>
+</article>
+</section>
+<div class="dashboard-grid">
+<section class="panel">
+<div class="section-heading">
+<div>
+<h2>Yêu cầu gần đây</h2>
+<p>Cập nhật từ không gian hỗ trợ của bạn</p>
+</div>
+<a class="text-link" asp-controller="Tickets" asp-action="Index">Xem tất cả →</a>
+</div>@if(Model.Recent.Count == 0){<div class="empty-state">
+<span class="empty-mark">▤</span>
+<h3>Bắt đầu từ vấn đề của bạn</h3>
+<p>Yêu cầu và tiến trình xử lý sẽ xuất hiện tại đây.</p>
+<a class="button button-secondary" asp-controller="Knowledge" asp-action="Index">Khám phá hướng dẫn</a>
+</div>}else{<div class="recent-list">@foreach(var t in Model.Recent){<a class="recent-item" asp-controller="Tickets" asp-action="Details" asp-route-id="@t.Id">
+<span class="recent-symbol">▤</span>
+<div>
+<strong>@t.Subject</strong>
+<small>@t.TicketNumber · @DisplayText.TicketCategory(t.Category)</small>
+</div>
+<span class="status status-@t.Status.ToLowerInvariant().Replace(" ","-")">@DisplayText.TicketStatus(t.Status)</span>
+</a>}</div>}</section>
+<section class="panel">
+<div class="section-heading">
+<div>
+<h2>Tiến trình hỗ trợ</h2>
+<p>Dựa trên yêu cầu thực tế</p>
+</div>
+</div>
+<div class="progress-summary">
+<strong>@percent<span>%</span>
+</strong>
+<p>yêu cầu đã hoàn tất</p>
+</div>
+<div class="progress-track">
+<span style="width:@(percent)%">
+</span>
+</div>
+<div class="category-breakdown">@if(Model.Categories.Count == 0){<p>Chưa có dữ liệu danh mục.</p>}@foreach(var c in Model.Categories){<div>
+<span>@DisplayText.TicketCategory(c.Key)</span>
+<strong>@c.Value</strong>
+</div>}</div>
+<a class="text-link" asp-controller="Dashboard" asp-action="Activity">Xem hoạt động gần đây →</a>
+</section>
+</div>
+<section class="quick-links">
+<a asp-controller="Knowledge" asp-action="Index">
+<span class="quick-icon">▧</span>
+<div>
+<h3>Tự tìm câu trả lời</h3>
+<p>Hướng dẫn tài khoản, thanh toán và sản phẩm.</p>
+</div>
+<span>→</span>
+</a>
+<a asp-controller="Assistant" asp-action="Index">
+<span class="quick-icon">✳</span>
+<div>
+<h3>Trao đổi với trợ lý</h3>
+<p>Giải đáp theo hướng dẫn và ngữ cảnh của bạn.</p>
+</div>
+<span>→</span>
+</a>
+</section>
